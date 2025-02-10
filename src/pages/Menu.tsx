@@ -58,10 +58,7 @@ import Home from './Home';
   ))}
 </IonContent>
           </IonMenu>
-
-        </IonSplitPane>
-
-        <IonRouterOutlet id='main'>
+          <IonRouterOutlet id='main'>
           <Route exact path="/it35-lab/app/home" component={Home}></Route>
           <Route exact path="/it35-lab/app/about" component={about}></Route>
           
@@ -70,6 +67,7 @@ import Home from './Home';
          <Redirect to="/it35-lab/app/home" />
          </Route>
         </IonRouterOutlet>
+        </IonSplitPane>
       </IonPage>
     );
   };
