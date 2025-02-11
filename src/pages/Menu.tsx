@@ -1,82 +1,66 @@
-import { 
-  IonButton,
-    IonButtons,
-      IonContent, 
-      IonHeader, 
-      IonIcon, 
-      IonItem, 
-      IonMenu, 
-      IonMenuButton, 
-      IonMenuToggle, 
-      IonPage, 
-      IonRoute, 
-      IonRouterOutlet, 
-      IonSplitPane, 
-      IonTitle, 
-      IonToolbar 
+import {
+    IonButton,
+    IonContent,
+    IonHeader,
+    IonIcon,
+    IonItem,
+    IonMenu,
+    IonMenuToggle,
+    IonPage,
+    IonRouterOutlet,
+    IonSplitPane,
+    IonTitle,
+    IonToolbar,
   } from '@ionic/react';
-import {homeOutline,rocketOutline,logOutOutline} 
-  
-import { Redirect, Route } from 'react-router';
-import about from './about';
-import Home from './Home';
+  import { homeOutline, logOutOutline, rocketOutline } from 'ionicons/icons';
+  import { Redirect, Route } from 'react-router';
+  import Home from './Home';
+  import About from './About';
   
   const Menu: React.FC = () => {
-
-  const path = [
-  {name: 'Home',url:'/it35-lab/app/home', icon:homeOutline},
-  {name:'About',url:'/it35-lab/app/about', icon:rocketOutline},
-
-]
-
-
-
-
-
+    const path = [
+      { name: 'Home', url: '/it35-lab/app/home', icon: homeOutline },
+      { name: 'About', url: '/it35-lab/app/about', icon: rocketOutline },
+    ];
+  
     return (
       <IonPage>
-        <IonSplitPane contentId='main'>
-          <IonMenu content='main'>
-<IonHeader>
-  <IonToolbar>
-    <IonTitle>
-      Menu
-    </IonTitle>
-  </IonToolbar>
-</IonHeader>
-
-<IonContent>
-  {path.map((item,index)=>(
-    <IonMenuToggle key={index}>
-      <IonItem routerLink={item.url} routerDirection='forward'>
-        <IonIcon icon={item.icon} slot='start'>
-
-        </IonIcon>
-        {item.name}
-      </IonItem>
-    </IonMenuToggle>
-
-  ))}
-
-{/**Log out button */}
- <IonButton routerLink='/it35-lab' routerDirection ='back' expand='full'>
- <IonIcon icon={logOutOutline} slot='start'>
-  
- </IonIcon>
- LogOut
- </IonButton>
-
-</IonContent>
+        <IonSplitPane contentId="main">
+          <IonMenu contentId="main">
+            <IonHeader>
+              <IonToolbar>
+                <IonTitle>Menu</IonTitle>
+              </IonToolbar>
+            </IonHeader>
+            <IonContent>
+              {path.map((item, index) => (
+                <IonMenuToggle key={index} auto-hide="false">
+                  <IonItem routerLink={item.url} routerDirection="forward">
+                    <IonIcon icon={item.icon} slot="start" />
+                    {item.name}
+                  </IonItem>
+                </IonMenuToggle>
+              ))}
+              <IonButton
+                routerLink="/it35-lab"
+                routerDirection="back"
+                expand="full"
+                className="ion-margin-top"
+              >
+                <IonIcon icon={logOutOutline} slot="start" />
+                Logout
+              </IonButton>
+            </IonContent>
           </IonMenu>
-          <IonRouterOutlet id='main'>
-          <Route exact path="/it35-lab/app/home" component={Home}></Route>
-          <Route exact path="/it35-lab/app/about" component={about}></Route>
-          
-          
-         <Route exact path="/it35-lab/app/">
-         <Redirect to="/it35-lab/app/home" />
-         </Route>
-        </IonRouterOutlet>
+  
+          <IonRouterOutlet id="main">
+            <Route exact path="/it35-lab/app/home" component={Home} />
+            <Route exact path="/it35-lab/app/about" component={About} />
+  
+            <Route exact path="/it35-lab/app">
+              <Redirect to="/it35-lab/app/home" />
+            </Route>
+          </IonRouterOutlet>
         </IonSplitPane>
       </IonPage>
     );
