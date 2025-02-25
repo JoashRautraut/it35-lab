@@ -4,6 +4,8 @@ import {
   IonButtons,
     IonContent, 
     IonHeader, 
+    IonInput, 
+    IonItem, 
     IonMenuButton, 
     IonPage, 
     IonTitle, 
@@ -22,6 +24,12 @@ const Login: React.FC = () => {
       <IonHeader>
         <IonToolbar>
           <IonTitle>Login</IonTitle>
+          <IonItem>
+        <IonInput label="UserName:" labelPlacement="floating" placeholder="Enter Username"></IonInput>
+      </IonItem>
+      <IonItem>
+        <IonInput label="Password:" type="password" value="password"></IonInput>
+      </IonItem>
         </IonToolbar>
       </IonHeader>
       <IonContent className='ion-padding'>
