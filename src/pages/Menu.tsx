@@ -62,6 +62,7 @@ const Menu: React.FC = () => {
           </Route>
         </IonRouterOutlet>
       </IonSplitPane>
+   
     </IonPage>
   );
 };
