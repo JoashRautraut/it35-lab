@@ -1,47 +1,30 @@
 import { 
-    IonButtons,
-      IonCard,
-      IonCardContent,
-      IonCardHeader,
-      IonCardSubtitle,
-      IonCardTitle,
-      IonContent, 
-      IonHeader, 
-      IonMenuButton, 
-      IonPage, 
-      IonTitle, 
-      IonToolbar 
-  } from '@ionic/react';
-  
-  const Feed: React.FC = () => {
-    
-    return (
-      
-      <IonPage>
-        <IonHeader>
-          <IonToolbar>
-            <IonButtons slot='start'>
-            <IonCard>
-      <img alt="Silhouette of mountains" src="https://www.unwindworldwide.com/images/tour-operators/pics/explore.jpg" />
-      <IonCardHeader>
-        <IonCardTitle>Explore</IonCardTitle>
-        <IonCardSubtitle>Making new Memories</IonCardSubtitle>
-      </IonCardHeader>
+  IonButtons,
+    IonContent, 
+    IonHeader, 
+    IonMenuButton, 
+    IonPage, 
+    IonTitle, 
+    IonToolbar 
+} from '@ionic/react';
+import FeedContainer from '../../components/FeedContainer';
 
-      <IonCardContent>looking for new learnings</IonCardContent>
-      </IonCard>
-              <IonMenuButton></IonMenuButton>
-            </IonButtons>
-            
-            
-          </IonToolbar>
-        </IonHeader>
-        <IonContent fullscreen>
-         
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', }} > Feed </div>
-        
-        </IonContent>
-      </IonPage>
-    );
-  };
- export default Feed;
+const Feed: React.FC = () => {
+  return (
+    <IonPage>
+      <IonHeader>
+        <IonToolbar>
+          <IonButtons slot='start'>
+            <IonMenuButton></IonMenuButton>
+          </IonButtons>
+          <IonTitle>Feed</IonTitle>
+        </IonToolbar>
+      </IonHeader>
+      <IonContent fullscreen>
+        <FeedContainer />
+      </IonContent>
+    </IonPage>
+  );
+};
+
+export default Feed;
