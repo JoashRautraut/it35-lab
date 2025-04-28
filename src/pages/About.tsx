@@ -24,4 +24,5 @@ const About: React.FC = () => {
     </IonPage>
   );
 };
+
 export default About;
