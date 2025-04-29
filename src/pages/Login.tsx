@@ -48,65 +48,124 @@ const Login: React.FC = () => {
       navigation.push('/it35-lab/app', 'forward', 'replace');
     }, 300);
   };
-  
+
   return (
     <IonPage>
-      <IonContent className='ion-padding'>
-        <div style={{
-          display: 'flex',
-          flexDirection:'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginTop:'25%'
-        }}>
-          <IonAvatar
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '150px',
-              height: '150px',
-              borderRadius: '50%', 
-              overflow: 'hidden' 
-            }}
-          >
-            <IonIcon 
-              icon={logoIonic}
-              color='primary'
-              style={{ fontSize: '120px', color: '#6c757d' }} 
-            />
-          </IonAvatar>
-          <h1 style={{
+      <IonContent className="ion-padding" style={{ background: '#f5f7fa' }}>
+        <div 
+          style={{
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-          }}>USER LOGIN</h1>
-          <IonInput
-            label="Email" 
-            labelPlacement="floating" 
-            fill="outline"
-            type="email"
-            placeholder="Enter Email"
-            value={email}
-            onIonChange={e => setEmail(e.detail.value!)}
-          />
-          <IonInput style={{ marginTop:'10px' }}      
-            fill="outline"
-            type="password"
-            placeholder="Password"
-            value={password}
-            onIonChange={e => setPassword(e.detail.value!)}
+            height: '100vh', // Full screen height
+            padding: '30px',
+          }}
+        >
+          <div 
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
+              width: '100%',
+              maxWidth: '400px',
+              padding: '40px 30px',
+            }}
           >
-            <IonInputPasswordToggle slot="end"></IonInputPasswordToggle>
-          </IonInput>
-        </div>
-        <IonButton onClick={doLogin} expand="full" shape='round'>
-          Login
-        </IonButton>
+            <IonAvatar
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100px',
+                height: '100px',
+                borderRadius: '50%',
+                overflow: 'hidden',
+                marginBottom: '20px',
+                border: '2px solid #0056b3',
+              }}
+            >
+              {/* Replace the Ionic logo with your custom image */}
+              <img src="https://m.media-amazon.com/images/S/pv-target-images/48448d3f65992c3c9da909933f7fa659efe20d88becd4b62459bc62e0da1889a.jpg" alt="User Avatar" style={{ width: '100%', height: '100%' }} />
+              
+            
+              
+            </IonAvatar>
+            <h1 style={{
+              fontSize: '1.6rem',
+              fontWeight: '500',
+              color: '#333', // Darker color for visibility
+              marginBottom: '20px',
+              textAlign: 'center',
+            }}>Login</h1>
+            <IonInput
+              label="Email" 
+              labelPlacement="floating" 
+              fill="outline"
+              type="email"
+              placeholder="Enter Email"
+              value={email}
+              onIonChange={e => setEmail(e.detail.value!)}
+              style={{
+                width: '100%',
+                marginBottom: '15px',
+                borderRadius: '8px',
+                padding: '12px',
+                borderColor: '#ccc',
+                color: '#333', // Dark text inside input for better visibility
+              }}
+            />
+            <IonInput 
+              fill="outline"
+              type="password"
+              placeholder="Password"
+              value={password}
+              onIonChange={e => setPassword(e.detail.value!)}
+              style={{
+                width: '100%',
+                marginBottom: '25px',
+                borderRadius: '8px',
+                padding: '12px',
+                borderColor: '#ccc',
+                color: '#333', // Dark text inside input for better visibility
+              }}
+            >
+              <IonInputPasswordToggle slot="end" />
+            </IonInput>
 
-        <IonButton routerLink="/it35-lab/register" expand="full" fill="clear" shape='round'>
-          Don't have an account? Register here
-        </IonButton>
+            <IonButton 
+              onClick={doLogin} 
+              expand="full" 
+              shape="round" 
+              style={{
+                marginBottom: '15px',
+                backgroundColor: '#0056b3',
+                color: '#fff',
+                fontWeight: 'bold',
+                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+              }}
+            >
+              Login
+            </IonButton>
+
+            <IonButton 
+              routerLink="/it35-lab/register" 
+              expand="full" 
+              fill="clear" 
+              shape="round" 
+              style={{
+                fontWeight: '500',
+                color: '#0056b3',
+              }}
+            >
+              Don't have an account? Register here
+            </IonButton>
+          </div>
+        </div>
 
         {/* Reusable AlertBox Component */}
         <AlertBox message={alertMessage} isOpen={showAlert} onClose={() => setShowAlert(false)} />
@@ -119,6 +178,10 @@ const Login: React.FC = () => {
           duration={1500}
           position="top"
           color="primary"
+          style={{
+            borderRadius: '8px',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          }}
         />
       </IonContent>
     </IonPage>
