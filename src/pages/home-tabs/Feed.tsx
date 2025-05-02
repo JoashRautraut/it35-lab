@@ -7,8 +7,9 @@ import {
     IonTitle, 
     IonToolbar 
 } from '@ionic/react';
+import FeedContainer from '../../components/FeedContainer';
 
-const Template: React.FC = () => {
+const Feed: React.FC = () => {
   return (
     <IonPage>
       <IonHeader>
@@ -16,13 +17,14 @@ const Template: React.FC = () => {
           <IonButtons slot='start'>
             <IonMenuButton></IonMenuButton>
           </IonButtons>
-          <IonTitle>Template</IonTitle>
+          <IonTitle>Feed</IonTitle>
         </IonToolbar>
       </IonHeader>
       <IonContent fullscreen>
+        <FeedContainer />
       </IonContent>
     </IonPage>
   );
 };
 
-export default Template;
+export default Feed;
