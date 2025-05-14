@@ -72,59 +72,53 @@ const FeedContainer = () => {
         const { data: authData } = await supabase.auth.getUser();
         console.log('Auth data:', authData);
         
-        if (authData?.user?.email) {
+        if (authData?.user?.id) {
           setUser(authData.user);
           
-          // First, try to find existing user
-          let { data: userData, error } = await supabase
-            .from('users')
+          // Get or create profile
+          let { data: profileData, error: profileError } = await supabase
+            .from('profiles')
             .select('*')
-            .eq('user_email', authData.user.email)
+            .eq('user_id', authData.user.id)
             .maybeSingle();
 
-          if (error) {
-            console.error('Error fetching user data:', error);
-            setAlertMessage('Error fetching user data: ' + error.message);
+          if (profileError) {
+            console.error('Error fetching profile:', profileError);
+            setAlertMessage('Error fetching profile: ' + profileError.message);
             setIsAlertOpen(true);
             return;
           }
 
-          if (!userData) {
-            console.log('No existing user found, creating new user data for:', authData.user.email);
-            // Create new user data with user_id as text
-            const { data: newUserData, error: createError } = await supabase
-              .from('users')
+          if (!profileData) {
+            // Create new profile
+            const { data: newProfile, error: createError } = await supabase
+              .from('profiles')
               .insert([
                 {
-                  user_id: authData.user.id, // This is already a string from auth.user.id
-                  user_email: authData.user.email,
-                  username: authData.user.email.split('@')[0],
-                  user_avatar_url: 'https://ionicframework.com/docs/img/demos/avatar.svg'
+                  user_id: authData.user.id,
+                  username: authData.user.email?.split('@')[0] || 'user_' + Math.random().toString(36).slice(2, 7),
+                  avatar_url: 'https://ionicframework.com/docs/img/demos/avatar.svg'
                 }
               ])
               .select()
               .single();
 
             if (createError) {
-              console.error('Error creating user data:', createError);
-              setAlertMessage('Error creating user profile: ' + createError.message);
+              console.error('Error creating profile:', createError);
+              setAlertMessage('Error creating profile: ' + createError.message);
               setIsAlertOpen(true);
               return;
             }
 
-            if (newUserData) {
-              console.log('Created new user data:', newUserData);
-              setUser(authData.user); // Just use the auth user data directly
-              setUsername(newUserData.username);
+            if (newProfile) {
+              setUsername(newProfile.username);
             }
           } else {
-            console.log('Found existing user data:', userData);
-            setUser(authData.user); // Just use the auth user data directly
-            setUsername(userData.username);
+            setUsername(profileData.username);
           }
         } else {
-          console.error('No authenticated user or email found');
-          setAlertMessage('Please log in with a valid email to create posts');
+          console.error('No authenticated user found');
+          setAlertMessage('Please log in to create posts');
           setIsAlertOpen(true);
         }
       } catch (err) {
@@ -137,27 +131,47 @@ const FeedContainer = () => {
     const fetchPosts = async () => {
       try {
         const { data, error } = await supabase
-          .from('posts')
+          .from('post_details')
           .select('*')
           .order('post_created_at', { ascending: false });
         
         if (error) {
           console.error('Error fetching posts:', error);
+          setAlertMessage('Error fetching posts: ' + error.message);
+          setIsAlertOpen(true);
           return;
         }
 
         if (data) {
           console.log('Fetched posts:', data);
           setPosts(data as Post[]);
+          
+          // Fetch reactions for current user
+          if (user) {
+            const { data: reactionsData, error: reactionsError } = await supabase
+              .from('reactions')
+              .select('post_id')
+              .eq('user_id', user.id);
+              
+            if (!reactionsError && reactionsData) {
+              const userReactionsMap = reactionsData.reduce((acc: { [key: string]: boolean }, reaction) => {
+                acc[reaction.post_id] = true;
+                return acc;
+              }, {});
+              setUserReactions(userReactionsMap);
+            }
+          }
         }
       } catch (err) {
         console.error('Exception fetching posts:', err);
+        setAlertMessage('Error fetching posts: ' + (err instanceof Error ? err.message : 'Unknown error'));
+        setIsAlertOpen(true);
       }
     };
 
     fetchUser();
     fetchPosts();
-  }, []);
+  }, [user?.id]);
 
   const ensureStorageBucket = async () => {
     try {
@@ -333,56 +347,99 @@ const FeedContainer = () => {
   };
 
   const createPost = async () => {
-    if ((!postContent && !selectedImage) || !user || !username) {
-      setAlertMessage('Please add some content or an image to your post');
-      setIsAlertOpen(true);
-      return;
-    }
-
     try {
+      console.log('Starting post creation...');
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.error('No authenticated user found');
+        setAlertMessage('Please log in to create a post');
+        setIsAlertOpen(true);
+        return;
+      }
+
+      console.log('Authenticated user:', user);
+
+      if (!postContent.trim()) {
+        setAlertMessage('Please enter some content for your post');
+        setIsAlertOpen(true);
+        return;
+      }
+
       let imageUrl = null;
       if (selectedImage) {
-        imageUrl = await uploadImage(selectedImage);
-        if (!imageUrl) {
-          setAlertMessage('Failed to upload image');
+        console.log('Uploading image...');
+        const fileExt = selectedImage.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).slice(2)}.${fileExt}`;
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('post-images')
+          .upload(fileName, selectedImage);
+
+        if (uploadError) {
+          console.error('Error uploading image:', uploadError);
+          setAlertMessage('Error uploading image: ' + uploadError.message);
           setIsAlertOpen(true);
           return;
         }
-        console.log('Image URL to be stored:', imageUrl);
+
+        if (uploadData) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('post-images')
+            .getPublicUrl(fileName);
+          imageUrl = publicUrl;
+          console.log('Image uploaded successfully:', imageUrl);
+        }
       }
 
-      const { data, error } = await supabase
+      console.log('Creating post in database...');
+      const { data: newPost, error: postError } = await supabase
         .from('posts')
         .insert([
           {
-            post_content: postContent,
             user_id: user.id,
-            username,
-            avatar_url: user.user_metadata?.avatar_url || 'https://ionicframework.com/docs/img/demos/avatar.svg',
-            image_url: imageUrl,
-            reaction_count: 0,
-            comment_count: 0
+            content: postContent,
+            image_url: imageUrl
           }
         ])
-        .select('*')
+        .select()
         .single();
 
-      if (error) {
-        console.error('Error creating post:', error);
-        throw error;
+      if (postError) {
+        console.error('Error creating post:', postError);
+        setAlertMessage('Error creating post: ' + postError.message);
+        setIsAlertOpen(true);
+        return;
       }
 
-      console.log('Created post with data:', data);
+      console.log('Post created successfully:', newPost);
 
-      setPosts([data as Post, ...posts]);
+      // Clear form
       setPostContent('');
       setSelectedImage(null);
       setImagePreview(null);
-      setAlertMessage('Post created successfully!');
-      setIsAlertOpen(true);
-    } catch (error) {
-      console.error('Error creating post:', error);
-      setAlertMessage('Error creating post: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setIsModalOpen(false);
+
+      // Refresh posts
+      console.log('Refreshing posts...');
+      const { data: posts, error: fetchError } = await supabase
+        .from('post_details')
+        .select('*')
+        .order('post_created_at', { ascending: false });
+
+      if (fetchError) {
+        console.error('Error fetching updated posts:', fetchError);
+        return;
+      }
+
+      if (posts) {
+        console.log('Posts refreshed successfully');
+        setPosts(posts as Post[]);
+      }
+
+    } catch (err) {
+      console.error('Exception in createPost:', err);
+      setAlertMessage('Error creating post: ' + (err instanceof Error ? err.message : 'Unknown error'));
       setIsAlertOpen(true);
     }
   };

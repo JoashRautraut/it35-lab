@@ -1,10 +1,10 @@
 import { 
     IonButtons,
-    IonContent, 
-    IonHeader, 
-    IonMenuButton, 
-    IonPage, 
-    IonTitle, 
+      IonContent, 
+      IonHeader, 
+      IonMenuButton, 
+      IonPage, 
+      IonTitle, 
     IonToolbar,
     IonSegment,
     IonSegmentButton,
@@ -25,12 +25,21 @@ import {
     IonList,
     IonSelect,
     IonSelectOption,
-    IonFab,
-    IonFabButton,
-    IonActionSheet
-} from '@ionic/react';
-import { person, document, heart, heartOutline, bookmark, bookmarkOutline, refreshCircle, share, filter, timeOutline } from 'ionicons/icons';
-import { useState, useEffect } from 'react';
+    IonActionSheet,
+    IonSearchbar,
+    IonGrid,
+    IonRow,
+    IonCol,
+    IonInfiniteScroll,
+    IonInfiniteScrollContent,
+    IonItemSliding,
+    IonItemOptions,
+    IonItemOption,
+    createAnimation,
+    IonBadge
+  } from '@ionic/react';
+import { person, document, heart, heartOutline, bookmark, bookmarkOutline, refreshCircle, share, filter, timeOutline, gridOutline, listOutline, searchOutline, trashOutline } from 'ionicons/icons';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../utils/supabaseClients';
 
 interface SavedPost {
@@ -51,8 +60,6 @@ interface FavoriteUser {
   created_at: string;
 }
 
-type SortOption = 'newest' | 'oldest' | 'most_reactions';
-
 interface SavedPostResponse {
   post_id: string;
   posts: {
@@ -63,7 +70,7 @@ interface SavedPostResponse {
     image_url?: string;
     post_created_at: string;
     reaction_count: number;
-  }
+  };
 }
 
 interface FavoriteUserResponse {
@@ -75,7 +82,16 @@ interface FavoriteUserResponse {
   created_at: string;
 }
 
-const Favorites: React.FC = () => {
+type SortOption = 'newest' | 'oldest' | 'most_reactions';
+
+interface ViewOptions {
+  layout: 'grid' | 'list';
+  searchText: string;
+}
+
+const ITEMS_PER_PAGE = 10;
+  
+  const Favorites: React.FC = () => {
   const [viewType, setViewType] = useState<'posts' | 'users'>('posts');
   const [savedPosts, setSavedPosts] = useState<SavedPost[]>([]);
   const [favoriteUsers, setFavoriteUsers] = useState<FavoriteUser[]>([]);
@@ -84,6 +100,13 @@ const Favorites: React.FC = () => {
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [selectedPost, setSelectedPost] = useState<SavedPost | null>(null);
+  const [viewOptions, setViewOptions] = useState<ViewOptions>({
+    layout: 'list',
+    searchText: ''
+  });
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const cardRefs = useRef<(HTMLIonCardElement | null)[]>([]);
 
   const fetchSavedItems = async () => {
     setIsLoading(true);
@@ -106,28 +129,23 @@ const Favorites: React.FC = () => {
               reaction_count
             )
           `)
-          .eq('user_id', user.id)
-          .order('saved_at', { ascending: false }) as { 
-            data: SavedPostResponse[] | null;
-            error: any;
-          };
+          .eq('user_id', user.id) as { data: SavedPostResponse[] | null; error: any };
 
         if (postsError) throw postsError;
         if (!savedPostsData) return;
 
         const posts = savedPostsData.map(item => ({
           post_id: item.post_id,
-          user_id: item.posts?.user_id || '',
-          username: item.posts?.username || '',
-          avatar_url: item.posts?.avatar_url || '',
-          post_content: item.posts?.post_content || '',
-          image_url: item.posts?.image_url,
-          post_created_at: item.posts?.post_created_at || new Date().toISOString(),
-          reaction_count: item.posts?.reaction_count || 0
+          user_id: item.posts.user_id,
+          username: item.posts.username,
+          avatar_url: item.posts.avatar_url,
+          post_content: item.posts.post_content,
+          image_url: item.posts.image_url,
+          post_created_at: item.posts.post_created_at,
+          reaction_count: item.posts.reaction_count
         }));
 
-        // Apply sorting
-        const sortedPosts = sortPosts(posts, sortBy);
+        const sortedPosts = sortPosts(posts);
         setSavedPosts(sortedPosts);
       } else {
         const { data: favUsersData, error: usersError } = await supabase
@@ -140,19 +158,15 @@ const Favorites: React.FC = () => {
             ),
             created_at
           `)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false }) as {
-            data: FavoriteUserResponse[] | null;
-            error: any;
-          };
+          .eq('user_id', user.id) as { data: FavoriteUserResponse[] | null; error: any };
 
         if (usersError) throw usersError;
         if (!favUsersData) return;
 
         setFavoriteUsers(favUsersData.map(item => ({
           favorite_user_id: item.favorite_user_id,
-          username: item.users?.username || '',
-          user_avatar_url: item.users?.user_avatar_url || '',
+          username: item.users.username,
+          user_avatar_url: item.users.user_avatar_url,
           created_at: item.created_at
         })));
       }
@@ -182,21 +196,19 @@ const Favorites: React.FC = () => {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
 
-  const sortPosts = (posts: SavedPost[], sortOption: SortOption) => {
-    switch (sortOption) {
-      case 'newest':
-        return [...posts].sort((a, b) => 
-          new Date(b.post_created_at).getTime() - new Date(a.post_created_at).getTime()
-        );
-      case 'oldest':
-        return [...posts].sort((a, b) => 
-          new Date(a.post_created_at).getTime() - new Date(b.post_created_at).getTime()
-        );
-      case 'most_reactions':
-        return [...posts].sort((a, b) => b.reaction_count - a.reaction_count);
-      default:
-        return posts;
-    }
+  const sortPosts = (posts: SavedPost[]) => {
+    return [...posts].sort((a, b) => {
+      switch (sortBy) {
+        case 'newest':
+          return new Date(b.post_created_at).getTime() - new Date(a.post_created_at).getTime();
+        case 'oldest':
+          return new Date(a.post_created_at).getTime() - new Date(b.post_created_at).getTime();
+        case 'most_reactions':
+          return b.reaction_count - a.reaction_count;
+        default:
+          return 0;
+      }
+    });
   };
 
   const handleShare = async (post: SavedPost) => {
@@ -260,31 +272,108 @@ const Favorites: React.FC = () => {
     }
   };
 
-  return (
-    <IonPage>
-      <IonHeader>
-        <IonToolbar>
-          <IonButtons slot='start'>
-            <IonMenuButton></IonMenuButton>
-          </IonButtons>
-          <IonTitle>Favorites</IonTitle>
-          {viewType === 'posts' && (
-            <IonButtons slot="end">
-              <IonButton>
-                <IonIcon slot="icon-only" icon={filter} />
-              </IonButton>
+  const loadMore = async (event: CustomEvent<void>) => {
+    const nextPage = page + 1;
+    const start = (nextPage - 1) * ITEMS_PER_PAGE;
+    const end = start + ITEMS_PER_PAGE;
+
+    if (viewType === 'posts') {
+      const nextItems = savedPosts.slice(start, end);
+      if (nextItems.length > 0) {
+        setSavedPosts(current => [...current, ...nextItems]);
+        setPage(nextPage);
+      } else {
+        setHasMore(false);
+      }
+    } else {
+      const nextItems = favoriteUsers.slice(start, end);
+      if (nextItems.length > 0) {
+        setFavoriteUsers(current => [...current, ...nextItems]);
+        setPage(nextPage);
+      } else {
+        setHasMore(false);
+      }
+    }
+
+    if (event.target && 'complete' in event.target) {
+      (event.target as any).complete();
+    }
+  };
+
+  const handleSearch = (text: string) => {
+    setViewOptions(prev => ({ ...prev, searchText: text }));
+    setPage(1);
+    setHasMore(true);
+  };
+
+  const getFilteredItems = () => {
+    const searchText = viewOptions.searchText.toLowerCase();
+    if (viewType === 'posts') {
+      return savedPosts.filter(post => 
+        post.username.toLowerCase().includes(searchText) ||
+        post.post_content.toLowerCase().includes(searchText)
+      );
+    } else {
+      return favoriteUsers.filter(user =>
+        user.username.toLowerCase().includes(searchText)
+      );
+    }
+  };
+
+  const animateCard = (card: HTMLIonCardElement) => {
+    const animation = createAnimation()
+      .addElement(card)
+      .duration(300)
+      .fromTo('opacity', '0', '1')
+      .fromTo('transform', 'translateY(20px)', 'translateY(0)');
+    
+    animation.play();
+  };
+
+  useEffect(() => {
+    cardRefs.current.forEach((card) => {
+      if (card) {
+        animateCard(card);
+      }
+    });
+  }, [savedPosts, favoriteUsers]);
+
+    return (
+      <IonPage>
+        <IonHeader>
+          <IonToolbar>
+          <IonButtons slot="start">
+            <IonMenuButton />
             </IonButtons>
-          )}
+            <IonTitle>Favorites</IonTitle>
+          <IonButtons slot="end">
+            <IonButton onClick={() => setViewOptions(prev => ({
+              ...prev,
+              layout: prev.layout === 'grid' ? 'list' : 'grid'
+            }))}>
+              <IonIcon icon={viewOptions.layout === 'grid' ? listOutline : gridOutline} />
+            </IonButton>
+          </IonButtons>
+        </IonToolbar>
+        <IonToolbar>
+          <IonSearchbar
+            value={viewOptions.searchText}
+            onIonInput={e => handleSearch(e.detail.value || '')}
+            placeholder="Search..."
+            animated={true}
+          />
         </IonToolbar>
         <IonToolbar>
           <IonSegment value={viewType} onIonChange={e => setViewType(e.detail.value as 'posts' | 'users')}>
             <IonSegmentButton value="posts">
               <IonIcon icon={bookmark} />
               <IonLabel>Saved Posts</IonLabel>
+              <IonBadge>{savedPosts.length}</IonBadge>
             </IonSegmentButton>
             <IonSegmentButton value="users">
               <IonIcon icon={person} />
               <IonLabel>Favorite Users</IonLabel>
+              <IonBadge>{favoriteUsers.length}</IonBadge>
             </IonSegmentButton>
           </IonSegment>
         </IonToolbar>
@@ -302,14 +391,14 @@ const Favorites: React.FC = () => {
             </IonSelect>
           </IonToolbar>
         )}
-      </IonHeader>
+        </IonHeader>
 
-      <IonContent fullscreen>
+      <IonContent>
         <IonRefresher slot="fixed" onIonRefresh={handleRefresh}>
           <IonRefresherContent
             pullingIcon={refreshCircle}
             refreshingSpinner="circles"
-          ></IonRefresherContent>
+          />
         </IonRefresher>
 
         {isLoading ? (
@@ -330,52 +419,90 @@ const Favorites: React.FC = () => {
             </IonCard>
           ))
         ) : viewType === 'posts' ? (
-          savedPosts.length > 0 ? (
-            savedPosts.map(post => (
-              <IonCard key={post.post_id}>
-                <IonItem lines="none">
-                  <IonAvatar slot="start">
-                    <img src={post.avatar_url || 'https://ionicframework.com/docs/img/demos/avatar.svg'} alt={post.username} />
-                  </IonAvatar>
-                  <IonLabel>
-                    <h2>{post.username}</h2>
-                    <p>
-                      <IonIcon icon={timeOutline} style={{ marginRight: '5px' }} />
-                      {formatDate(post.post_created_at)}
-                    </p>
-                  </IonLabel>
-                  <IonButton
-                    fill="clear"
-                    slot="end"
-                    onClick={() => removeSavedPost(post.post_id)}
-                  >
-                    <IonIcon slot="icon-only" icon={bookmarkOutline} />
-                  </IonButton>
-                </IonItem>
-                <IonCardContent>
-                  <IonText>{post.post_content}</IonText>
-                  {post.image_url && (
-                    <div style={{ marginTop: '1rem' }}>
-                      <IonImg src={post.image_url} />
-                    </div>
-                  )}
-                  <div style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between',
-                    marginTop: '1rem'
-                  }}>
-                    <IonButton fill="clear" size="small">
-                      <IonIcon slot="start" icon={heartOutline} />
-                      {post.reaction_count}
-                    </IonButton>
-                    <IonButton fill="clear" size="small" onClick={() => handleShare(post)}>
-                      <IonIcon slot="icon-only" icon={share} />
-                    </IonButton>
-                  </div>
-                </IonCardContent>
-              </IonCard>
-            ))
+          getFilteredItems().length > 0 ? (
+            viewOptions.layout === 'grid' ? (
+              <IonGrid>
+                <IonRow>
+                  {(getFilteredItems() as SavedPost[]).map((post, index) => (
+                    <IonCol size="12" sizeMd="6" sizeLg="4" key={post.post_id}>
+                      <IonCard ref={el => cardRefs.current[index] = el}>
+                        <IonItem lines="none">
+                          <IonAvatar slot="start">
+                            <img src={post.avatar_url || 'https://ionicframework.com/docs/img/demos/avatar.svg'} alt={post.username} />
+                          </IonAvatar>
+                          <IonLabel>
+                            <h2>{post.username}</h2>
+                            <p>
+                              <IonIcon icon={timeOutline} style={{ marginRight: '5px' }} />
+                              {formatDate(post.post_created_at)}
+                            </p>
+                          </IonLabel>
+                        </IonItem>
+                        <IonCardContent>
+                          <IonText>{post.post_content}</IonText>
+                          {post.image_url && (
+                            <div style={{ marginTop: '1rem' }}>
+                              <IonImg src={post.image_url} />
+                            </div>
+                          )}
+                          <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'space-between',
+                            marginTop: '1rem'
+                          }}>
+                            <IonButton fill="clear" size="small">
+                              <IonIcon slot="start" icon={heartOutline} />
+                              {post.reaction_count}
+                            </IonButton>
+                            <div>
+                              <IonButton fill="clear" size="small" onClick={() => handleShare(post)}>
+                                <IonIcon slot="icon-only" icon={share} />
+                              </IonButton>
+                              <IonButton fill="clear" size="small" onClick={() => removeSavedPost(post.post_id)}>
+                                <IonIcon slot="icon-only" icon={bookmarkOutline} />
+                              </IonButton>
+                            </div>
+                          </div>
+                        </IonCardContent>
+                      </IonCard>
+                    </IonCol>
+                  ))}
+                </IonRow>
+              </IonGrid>
+            ) : (
+              <IonList>
+                {(getFilteredItems() as SavedPost[]).map((post, index) => (
+                  <IonItemSliding key={post.post_id}>
+                    <IonItem>
+                      <IonAvatar slot="start">
+                        <img src={post.avatar_url || 'https://ionicframework.com/docs/img/demos/avatar.svg'} alt={post.username} />
+                      </IonAvatar>
+                      <IonLabel>
+                        <h2>{post.username}</h2>
+                        <p>{post.post_content}</p>
+                        <p>
+                          <IonIcon icon={timeOutline} style={{ marginRight: '5px' }} />
+                          {formatDate(post.post_created_at)}
+                        </p>
+                      </IonLabel>
+                      <IonButton fill="clear" slot="end">
+                        <IonIcon slot="icon-only" icon={heartOutline} />
+                        {post.reaction_count}
+                      </IonButton>
+                    </IonItem>
+                    <IonItemOptions side="end">
+                      <IonItemOption onClick={() => handleShare(post)}>
+                        <IonIcon slot="icon-only" icon={share} />
+                      </IonItemOption>
+                      <IonItemOption color="danger" onClick={() => removeSavedPost(post.post_id)}>
+                        <IonIcon slot="icon-only" icon={trashOutline} />
+                      </IonItemOption>
+                    </IonItemOptions>
+                  </IonItemSliding>
+                ))}
+              </IonList>
+            )
           ) : (
             <div style={{ 
               display: 'flex', 
@@ -403,26 +530,33 @@ const Favorites: React.FC = () => {
         ) : (
           favoriteUsers.length > 0 ? (
             <IonList>
-              {favoriteUsers.map(user => (
-                <IonItem key={user.favorite_user_id}>
-                  <IonAvatar slot="start">
-                    <img src={user.user_avatar_url || 'https://ionicframework.com/docs/img/demos/avatar.svg'} alt={user.username} />
-                  </IonAvatar>
-                  <IonLabel>
-                    <h2>{user.username}</h2>
-                    <p>
-                      <IonIcon icon={timeOutline} style={{ marginRight: '5px' }} />
-                      Favorited on {formatDate(user.created_at)}
-                    </p>
-                  </IonLabel>
-                  <IonButton
-                    fill="clear"
-                    slot="end"
-                    onClick={() => removeFavoriteUser(user.favorite_user_id)}
-                  >
-                    <IonIcon slot="icon-only" icon={heartOutline} />
-                  </IonButton>
-                </IonItem>
+              {(getFilteredItems() as FavoriteUser[]).map(user => (
+                <IonItemSliding key={user.favorite_user_id}>
+                  <IonItem>
+                    <IonAvatar slot="start">
+                      <img src={user.user_avatar_url || 'https://ionicframework.com/docs/img/demos/avatar.svg'} alt={user.username} />
+                    </IonAvatar>
+                    <IonLabel>
+                      <h2>{user.username}</h2>
+                      <p>
+                        <IonIcon icon={timeOutline} style={{ marginRight: '5px' }} />
+                        Favorited on {formatDate(user.created_at)}
+                      </p>
+                    </IonLabel>
+                    <IonButton
+                      fill="clear"
+                      slot="end"
+                      onClick={() => removeFavoriteUser(user.favorite_user_id)}
+                    >
+                      <IonIcon slot="icon-only" icon={heartOutline} />
+                    </IonButton>
+                  </IonItem>
+                  <IonItemOptions side="end">
+                    <IonItemOption color="danger" onClick={() => removeFavoriteUser(user.favorite_user_id)}>
+                      <IonIcon slot="icon-only" icon={trashOutline} />
+                    </IonItemOption>
+                  </IonItemOptions>
+                </IonItemSliding>
               ))}
             </IonList>
           ) : (
@@ -451,6 +585,17 @@ const Favorites: React.FC = () => {
           )
         )}
 
+        <IonInfiniteScroll
+          onIonInfinite={loadMore}
+          threshold="100px"
+          disabled={!hasMore}
+        >
+          <IonInfiniteScrollContent
+            loadingSpinner="bubbles"
+            loadingText="Loading more..."
+          />
+        </IonInfiniteScroll>
+
         <IonActionSheet
           isOpen={showActionSheet}
           onDidDismiss={() => setShowActionSheet(false)}
@@ -474,9 +619,9 @@ const Favorites: React.FC = () => {
             }
           ]}
         />
-      </IonContent>
-    </IonPage>
-  );
-};
+        </IonContent>
+      </IonPage>
+    );
+  };
 
-export default Favorites;
+ export default Favorites;
