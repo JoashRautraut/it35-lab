@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { IonApp, IonContent, IonHeader, IonPage, IonTitle, IonToolbar, IonButton, IonInput, IonLabel, IonModal, IonFooter, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonAlert, IonText, IonAvatar, IonCol, IonGrid, IonRow, IonIcon, IonPopover, IonTextarea, IonImg, IonActionSheet } from '@ionic/react';
+import { IonApp, IonContent, IonHeader, IonPage, IonTitle, IonToolbar, IonButton, IonInput, IonLabel, IonModal, IonFooter, IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonAlert, IonText, IonAvatar, IonCol, IonGrid, IonRow, IonIcon, IonPopover, IonTextarea, IonImg, IonActionSheet, IonSearchbar, IonSelect, IonSelectOption, IonChip } from '@ionic/react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../utils/supabaseClients';
-import { colorFill, pencil, trash, heart, heartOutline, chatbubbleOutline, image, send, camera } from 'ionicons/icons';
+import { colorFill, pencil, trash, heart, heartOutline, chatbubbleOutline, image, send, camera, search, close } from 'ionicons/icons';
 import React from 'react';
 
 interface Post {
@@ -35,6 +35,12 @@ interface Reaction {
   reaction_type: 'like';
 }
 
+interface SearchFilters {
+  searchText: string;
+  dateRange: 'all' | 'today' | 'week' | 'month';
+  userFilter: string;
+}
+
 const FeedContainer = () => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [postContent, setPostContent] = useState('');
@@ -52,6 +58,13 @@ const FeedContainer = () => {
   const [userReactions, setUserReactions] = useState<{ [key: string]: boolean }>({});
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({
+    searchText: '',
+    dateRange: 'all',
+    userFilter: ''
+  });
+  const [filteredPosts, setFilteredPosts] = useState<Post[]>([]);
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -146,6 +159,48 @@ const FeedContainer = () => {
     fetchPosts();
   }, []);
 
+  const ensureStorageBucket = async () => {
+    try {
+      // Try to list the bucket contents to check if it exists and is accessible
+      const { error: listError } = await supabase.storage
+        .from('post-images')
+        .list();
+
+      if (listError) {
+        console.error('Storage bucket error:', listError);
+        // If bucket doesn't exist, try to create it
+        const { data: bucketData, error: createError } = await supabase.storage.createBucket('post-images', {
+          public: true,  // Make the bucket public
+          fileSizeLimit: 5242880,  // 5MB in bytes
+          allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+        });
+
+        if (createError) {
+          throw new Error(`Failed to create storage bucket: ${createError.message}`);
+        }
+        console.log('Created storage bucket:', bucketData);
+      }
+    } catch (error) {
+      console.error('Error ensuring storage bucket:', error);
+      throw new Error('Failed to setup storage bucket');
+    }
+  };
+
+  // Call ensureStorageBucket when component mounts
+  useEffect(() => {
+    const setupStorage = async () => {
+      try {
+        await ensureStorageBucket();
+      } catch (error) {
+        console.error('Storage setup error:', error);
+        setAlertMessage('Error setting up image storage');
+        setIsAlertOpen(true);
+      }
+    };
+
+    setupStorage();
+  }, []);
+
   const handleImageSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -183,31 +238,95 @@ const FeedContainer = () => {
 
   const uploadImage = async (file: File): Promise<string | null> => {
     try {
-      const fileExt = file.name.split('.').pop()?.toLowerCase();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
-      const filePath = `${fileName}`;
-
-      const { data, error } = await supabase.storage
-        .from('post-images')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (error) {
-        throw error;
+      // Check if user is authenticated
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        throw new Error(`Authentication error: ${sessionError.message}`);
+      }
+      if (!session) {
+        throw new Error('No active session - please log in');
       }
 
-      // Get the public URL with the full path
-      const { data: { publicUrl } } = supabase.storage
+      // Ensure storage is set up
+      await ensureStorageBucket();
+
+      // Validate file before upload
+      if (!file) {
+        throw new Error('No file selected');
+      }
+
+      // Validate file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+      if (file.size > maxSize) {
+        throw new Error('File size must be less than 5MB');
+      }
+
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowedTypes.includes(file.type)) {
+        throw new Error(`File type ${file.type} is not supported. Please use: ${allowedTypes.join(', ')}`);
+      }
+
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      const fileName = `${Date.now()}-${session.user.id}.${fileExt}`;
+      const filePath = fileName;
+
+      console.log('Starting upload:', {
+        fileName,
+        filePath,
+        fileType: file.type,
+        fileSize: file.size,
+        userId: session.user.id
+      });
+
+      // Get the public URL first to verify bucket access
+      const { data: urlData } = supabase.storage
         .from('post-images')
         .getPublicUrl(filePath);
 
-      console.log('Uploaded image URL:', publicUrl); // Debug log
+      if (!urlData?.publicUrl) {
+        throw new Error('Could not generate public URL - check storage configuration');
+      }
+
+      // Now attempt the upload
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('post-images')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (uploadError) {
+        console.error('Upload error details:', {
+          error: uploadError,
+          message: uploadError.message,
+          name: uploadError.name
+        });
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
+
+      if (!uploadData) {
+        console.error('No upload data received');
+        throw new Error('Upload failed: No data received from server');
+      }
+
+      console.log('Upload successful:', uploadData);
+
+      // Use the pre-generated public URL
+      const publicUrl = urlData.publicUrl;
+      console.log('Using public URL:', publicUrl);
+
       return publicUrl;
     } catch (error) {
-      console.error('Error uploading image:', error);
-      setAlertMessage('Error uploading image');
+      console.error('Error in uploadImage:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error during upload';
+      console.error('Full error details:', {
+        error,
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      setAlertMessage(`Error uploading image: ${errorMessage}`);
       setIsAlertOpen(true);
       return null;
     }
@@ -229,6 +348,7 @@ const FeedContainer = () => {
           setIsAlertOpen(true);
           return;
         }
+        console.log('Image URL to be stored:', imageUrl);
       }
 
       const { data, error } = await supabase
@@ -247,7 +367,12 @@ const FeedContainer = () => {
         .select('*')
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error creating post:', error);
+        throw error;
+      }
+
+      console.log('Created post with data:', data);
 
       setPosts([data as Post, ...posts]);
       setPostContent('');
@@ -257,7 +382,7 @@ const FeedContainer = () => {
       setIsAlertOpen(true);
     } catch (error) {
       console.error('Error creating post:', error);
-      setAlertMessage('Error creating post');
+      setAlertMessage('Error creating post: ' + (error instanceof Error ? error.message : 'Unknown error'));
       setIsAlertOpen(true);
     }
   };
@@ -365,6 +490,167 @@ const FeedContainer = () => {
     }
   };
 
+  const handleSearch = async () => {
+    try {
+      let query = supabase
+        .from('posts')
+        .select('*')
+        .order('post_created_at', { ascending: false });
+
+      // Apply text search if provided
+      if (searchFilters.searchText) {
+        query = query.or(`post_content.ilike.%${searchFilters.searchText}%,username.ilike.%${searchFilters.searchText}%`);
+      }
+
+      // Apply date range filter
+      if (searchFilters.dateRange !== 'all') {
+        const now = new Date();
+        let startDate = new Date();
+        
+        switch (searchFilters.dateRange) {
+          case 'today':
+            startDate.setHours(0, 0, 0, 0);
+            break;
+          case 'week':
+            startDate.setDate(now.getDate() - 7);
+            break;
+          case 'month':
+            startDate.setMonth(now.getMonth() - 1);
+            break;
+        }
+        
+        query = query.gte('post_created_at', startDate.toISOString());
+      }
+
+      // Apply user filter if provided
+      if (searchFilters.userFilter) {
+        query = query.eq('username', searchFilters.userFilter);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        throw error;
+      }
+
+      setFilteredPosts(data || []);
+    } catch (error) {
+      console.error('Search error:', error);
+      setAlertMessage('Error performing search');
+      setIsAlertOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    if (searchFilters.searchText || searchFilters.dateRange !== 'all' || searchFilters.userFilter) {
+      handleSearch();
+    } else {
+      setFilteredPosts(posts);
+    }
+  }, [searchFilters, posts]);
+
+  const SearchComponent = () => (
+    <IonCard>
+      <IonCardContent>
+        <IonGrid>
+          <IonRow>
+            <IonCol size="12">
+              <IonSearchbar
+                value={searchFilters.searchText}
+                onIonInput={(e) => {
+                  setSearchFilters(prev => ({
+                    ...prev,
+                    searchText: e.detail.value || ''
+                  }));
+                }}
+                placeholder="Search posts and users..."
+                animated={true}
+              />
+            </IonCol>
+          </IonRow>
+          <IonRow>
+            <IonCol size="6">
+              <IonSelect
+                interface="popover"
+                placeholder="Time range"
+                value={searchFilters.dateRange}
+                onIonChange={(e) => {
+                  setSearchFilters(prev => ({
+                    ...prev,
+                    dateRange: e.detail.value
+                  }));
+                }}
+              >
+                <IonSelectOption value="all">All time</IonSelectOption>
+                <IonSelectOption value="today">Today</IonSelectOption>
+                <IonSelectOption value="week">Past week</IonSelectOption>
+                <IonSelectOption value="month">Past month</IonSelectOption>
+              </IonSelect>
+            </IonCol>
+            <IonCol size="6">
+              <IonSelect
+                interface="popover"
+                placeholder="Filter by user"
+                value={searchFilters.userFilter}
+                onIonChange={(e) => {
+                  setSearchFilters(prev => ({
+                    ...prev,
+                    userFilter: e.detail.value
+                  }));
+                }}
+              >
+                <IonSelectOption value="">All users</IonSelectOption>
+                {Array.from(new Set(posts.map(post => post.username))).map(username => (
+                  <IonSelectOption key={username} value={username}>
+                    {username}
+                  </IonSelectOption>
+                ))}
+              </IonSelect>
+            </IonCol>
+          </IonRow>
+          {(searchFilters.searchText || searchFilters.dateRange !== 'all' || searchFilters.userFilter) && (
+            <IonRow>
+              <IonCol>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                  {searchFilters.searchText && (
+                    <IonChip
+                      onClick={() => {
+                        setSearchFilters(prev => ({ ...prev, searchText: '' }));
+                      }}
+                    >
+                      Search: {searchFilters.searchText}
+                      <IonIcon icon={close} />
+                    </IonChip>
+                  )}
+                  {searchFilters.dateRange !== 'all' && (
+                    <IonChip
+                      onClick={() => {
+                        setSearchFilters(prev => ({ ...prev, dateRange: 'all' }));
+                      }}
+                    >
+                      Time: {searchFilters.dateRange}
+                      <IonIcon icon={close} />
+                    </IonChip>
+                  )}
+                  {searchFilters.userFilter && (
+                    <IonChip
+                      onClick={() => {
+                        setSearchFilters(prev => ({ ...prev, userFilter: '' }));
+                      }}
+                    >
+                      User: {searchFilters.userFilter}
+                      <IonIcon icon={close} />
+                    </IonChip>
+                  )}
+                </div>
+              </IonCol>
+            </IonRow>
+          )}
+        </IonGrid>
+      </IonCardContent>
+    </IonCard>
+  );
+
   return (
     <>
       <IonContent>
@@ -372,7 +658,15 @@ const FeedContainer = () => {
           <>
             <IonCard>
               <IonCardHeader>
-                <IonCardTitle>Create Post</IonCardTitle>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <IonCardTitle>Create Post</IonCardTitle>
+                  <IonButton
+                    fill="clear"
+                    onClick={() => setIsSearchVisible(!isSearchVisible)}
+                  >
+                    <IonIcon icon={search} />
+                  </IonButton>
+                </div>
               </IonCardHeader>
               <IonCardContent>
                 <IonTextarea
@@ -448,7 +742,9 @@ const FeedContainer = () => {
               </div>
             </IonCard>
   
-            {posts.map(post => (
+            {isSearchVisible && <SearchComponent />}
+  
+            {filteredPosts.map(post => (
               <IonCard key={post.post_id} style={{ marginTop: '2rem' }}>
                 <IonCardHeader>
                   <IonRow>
@@ -501,23 +797,57 @@ const FeedContainer = () => {
                       justifyContent: 'center',
                       alignItems: 'center'
                     }}>
-                      <img
-                        src={post.image_url}
-                        alt="Post content"
-                        style={{
-                          maxWidth: '100%',
-                          maxHeight: '500px',
-                          objectFit: 'contain'
-                        }}
-                        onError={(e) => {
-                          console.error('Error loading image:', post.image_url);
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                        }}
-                        onLoad={() => {
-                          console.log('Image loaded successfully:', post.image_url);
-                        }}
-                      />
+                      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                        <IonImg
+                          src={post.image_url}
+                          alt="Post content"
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'contain'
+                          }}
+                          onIonError={(e) => {
+                            const imageUrl = post.image_url;
+                            if (!imageUrl) return;
+                            
+                            console.error('Error loading image:', imageUrl);
+                            
+                            // Try to get a fresh URL
+                            try {
+                              const fileName = imageUrl.split('/').pop();
+                              if (fileName) {
+                                const { data } = supabase.storage
+                                  .from('post-images')
+                                  .getPublicUrl(fileName);
+                                
+                                if (data?.publicUrl) {
+                                  console.log('Retrying with fresh URL:', data.publicUrl);
+                                  const target = e.target as HTMLIonImgElement;
+                                  target.src = data.publicUrl;
+                                } else {
+                                  throw new Error('Could not generate fresh URL');
+                                }
+                              } else {
+                                throw new Error('Could not extract filename from URL');
+                              }
+                            } catch (error) {
+                              console.error('Error getting fresh URL:', error);
+                              const target = e.target as HTMLIonImgElement;
+                              target.style.display = 'none';
+                              
+                              // Show a placeholder or error message
+                              const errorDiv = document.createElement('div');
+                              errorDiv.textContent = 'Image not available';
+                              errorDiv.style.padding = '20px';
+                              errorDiv.style.color = '#666';
+                              target.parentElement?.appendChild(errorDiv);
+                            }
+                          }}
+                          onIonImgDidLoad={() => {
+                            console.log('Image loaded successfully:', post.image_url);
+                          }}
+                        />
+                      </div>
                     </div>
                   )}
                   
